@@ -89,3 +89,15 @@ class StaleRelease(LimitError):
 
 class ConfigError(CraneFleetError):
     """Raised when a site configuration payload is invalid."""
+
+
+class RatedError(CraneFleetError):
+    """Base class for rated-capacity guard failures."""
+
+
+class ChartError(RatedError):
+    """Raised when a radius falls outside the load chart."""
+
+
+class LoadOverrated(RatedError):
+    """Raised when the rated-capacity guard forbids hoisting."""

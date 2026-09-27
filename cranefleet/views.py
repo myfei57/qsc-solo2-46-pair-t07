@@ -121,6 +121,22 @@ def limit_view(console: "Console") -> dict[str, object]:
     }
 
 
+def rated_view(console: "Console") -> dict[str, object]:
+    monitor = console.rated
+    decision = monitor.decision_now()
+    return {
+        "id": monitor.id,
+        "radius": monitor.radius_now(),
+        "load": monitor.load_now(),
+        "reading_seq": monitor.reading_seq_now(),
+        "warn_ratio": monitor.warn_ratio,
+        "fault": monitor.fault_now(),
+        "acknowledged": monitor.acknowledged_now(),
+        "chart": monitor.chart.to_dict(),
+        "decision": decision.to_dict() if decision else None,
+    }
+
+
 def cluster_view(console: "Console") -> dict[str, object]:
     cluster = console.cluster
     current = {crane_id: point.to_dict() for crane_id, point in fleet.current_positions(cluster).items()}
@@ -199,6 +215,7 @@ def state_view(console: "Console") -> dict[str, object]:
         "hoist": hoist_view(console),
         "wind": wind_view(console),
         "limit": limit_view(console),
+        "rated": rated_view(console),
         "cluster": cluster_view(console),
         "crane": crane_view(console),
         "load": load_view(console),
@@ -218,6 +235,7 @@ __all__ = [
     "limit_view",
     "load_view",
     "nearest_pair_view",
+    "rated_view",
     "slew_view",
     "state_view",
     "trolley_view",

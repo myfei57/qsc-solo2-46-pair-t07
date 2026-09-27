@@ -16,6 +16,7 @@ from . import config as site_config
 from . import crane as crane_module
 from . import hoist as hoist_module
 from . import limit as limit_module
+from . import rated as rated_module
 from . import slew as slew_module
 from . import trolley as trolley_module
 from . import views
@@ -30,6 +31,7 @@ from .errors import (
     FeedbackNotConfirmed,
     HoistBusy,
     HookNotLowered,
+    LoadOverrated,
     SlewBlocked,
     SlewBusy,
     SlewIdle,
@@ -115,6 +117,7 @@ class Console:
         self.speedometer = Speedometer()
         self.gust = Gust()
         self.load = crane_module.Load(2.4)
+        self.rated = rated_module.LoadMonitor("crane-1")
         self._routes: dict[tuple[str, str], Handler] = {
             ("GET", "/api/state"): self.handle_state,
             ("GET", "/api/zone/state"): self.handle_zone_state,
@@ -142,6 +145,10 @@ class Console:
             ("POST", "/api/hoist/stop"): self.handle_hoist_stop,
             ("GET", "/api/limit/state"): self.handle_limit_state,
             ("POST", "/api/limit/check"): self.handle_limit_check,
+            ("GET", "/api/rated/state"): self.handle_rated_state,
+            ("POST", "/api/rated/update"): self.handle_rated_update,
+            ("POST", "/api/rated/check"): self.handle_rated_check,
+            ("POST", "/api/rated/ack"): self.handle_rated_ack,
             ("GET", "/api/config"): self.handle_config,
             ("POST", "/api/config"): self.handle_config_save,
             ("GET", "/api/audit"): self.handle_audit,
@@ -309,6 +316,11 @@ class Console:
         if crane is None:
             return 404, fail("crane not found")
         command = crane_module.Command.from_dict(request.body)
+        if command.action == crane_module.ACTION_RAISE:
+            try:
+                rated_module.guard(self.rated, self.audit)
+            except LoadOverrated as exc:
+                return 409, fail(str(exc))
         if command.source == crane_module.SOURCE_REMOTE:
             crane_module.apply_remote(crane, command)
         else:
@@ -447,6 +459,51 @@ class Console:
                 "arbitration": arbitration.to_dict() if arbitration else None,
             }
         )
+
+    # ------------------------------------------------------------------ rated
+
+    def handle_rated_state(self, request: Request) -> tuple[int, dict[str, Any]]:
+        return 200, ok(views.rated_view(self))
+
+    def handle_rated_update(self, request: Request) -> tuple[int, dict[str, Any]]:
+        if not request.body_valid:
+            return 400, fail("bad request")
+        radius = _number(request.body.get("radius"))
+        load = _number(request.body.get("load"))
+        if radius <= 0 or load < 0:
+            return 400, fail("radius/load invalid")
+        decision = rated_module.update_reading(self.rated, radius, load)
+        if decision is None:
+            fault = self.rated.fault_now()
+            self.audit.record(self.rated.id, "rated-fault", fault)
+            self._cut_overload_hoist()
+            return 409, fail(fault)
+        self.audit.record(self.rated.id, "rated-check", decision.summary())
+        if decision.level == rated_module.LEVEL_OVERLOAD:
+            self._cut_overload_hoist()
+        return 200, ok(decision.to_dict())
+
+    def handle_rated_check(self, request: Request) -> tuple[int, dict[str, Any]]:
+        try:
+            decision = rated_module.guard(self.rated, self.audit)
+        except LoadOverrated as exc:
+            return 409, fail(str(exc))
+        return 200, ok(decision.to_dict())
+
+    def handle_rated_ack(self, request: Request) -> tuple[int, dict[str, Any]]:
+        if not rated_module.acknowledge(self.rated):
+            return 409, fail("no warning to acknowledge")
+        decision = self.rated.decision_now()
+        self.audit.record(self.rated.id, "rated-ack", decision.summary() if decision else "")
+        return 200, ok(views.rated_view(self))
+
+    def _cut_overload_hoist(self) -> None:
+        """Drop any hoist motion the moment a judgement forbids it."""
+
+        if not self.hoist.is_moving():
+            return
+        hoist_module.stop(self.hoist, self.audit)
+        self.audit.record(self.rated.id, "rated-cut", "hoist motion cut by rated guard")
 
     # ---------------------------------------------------------------- console
 

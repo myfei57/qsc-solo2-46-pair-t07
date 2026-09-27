@@ -52,6 +52,8 @@ async function refresh() {
   const hoist = data.hoist || {};
   const wind = data.wind || {};
   const limit = data.limit || {};
+  const rated = data.rated || {};
+  const decision = rated.decision || {};
   const cluster = data.cluster || {};
   const pair = cluster.nearest_pair || {};
   renderCards([
@@ -63,12 +65,15 @@ async function refresh() {
     ["制动状态", hoist.brake_engaged ? "抱闸" : "松闸"],
     ["风速", (wind.level || 0).toFixed(1) + " m/s", wind.active ? "danger" : ""],
     ["限位闩锁", limit.latch ? "锁定" : "释放", limit.latch ? "danger" : ""],
+    ["额定余量", decision.margin !== undefined ? decision.margin.toFixed(2) + " t" : "—",
+      decision.level === "overload" ? "danger" : decision.level === "warn" ? "warn" : ""],
     ["最近间距", pair.distance ? pair.distance.toFixed(1) + " 米" : "—", pair.below_safe ? "danger" : ""],
     ["审计记录", data.audit || 0],
   ]);
   $("crane-data").textContent = JSON.stringify(cluster, null, 2);
   $("zone-data").textContent = JSON.stringify(zone, null, 2);
   $("hoist-data").textContent = JSON.stringify(hoist, null, 2);
+  $("rated-data").textContent = JSON.stringify(rated, null, 2);
   $("alarm-data").textContent = JSON.stringify({ wind, limit }, null, 2);
   $("config-data").textContent = JSON.stringify(data.config || {}, null, 2);
   const audit = await api("/api/audit?limit=15");
@@ -119,6 +124,26 @@ $("slew-start-btn").addEventListener("click", async () => {
 
 $("lower-btn").addEventListener("click", async () => {
   await post("/api/crane/command", { source: "cab", action: "lower", axis: "hoist" });
+  refresh();
+});
+
+$("raise-btn").addEventListener("click", async () => {
+  await post("/api/crane/command", { source: "cab", action: "raise", axis: "hoist" });
+  refresh();
+});
+
+$("rated-warn-btn").addEventListener("click", async () => {
+  await post("/api/rated/update", { radius: 30, load: 2.5 });
+  refresh();
+});
+
+$("rated-over-btn").addEventListener("click", async () => {
+  await post("/api/rated/update", { radius: 48, load: 2.0 });
+  refresh();
+});
+
+$("rated-ack-btn").addEventListener("click", async () => {
+  await post("/api/rated/ack");
   refresh();
 });
 
