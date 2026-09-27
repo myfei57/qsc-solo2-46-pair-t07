@@ -16,6 +16,7 @@ from . import config as site_config
 from . import crane as crane_module
 from . import hoist as hoist_module
 from . import limit as limit_module
+from . import rating as rating_module
 from . import slew as slew_module
 from . import trolley as trolley_module
 from . import views
@@ -30,6 +31,7 @@ from .errors import (
     FeedbackNotConfirmed,
     HoistBusy,
     HookNotLowered,
+    OverRated,
     SlewBlocked,
     SlewBusy,
     SlewIdle,
@@ -39,6 +41,7 @@ from .errors import (
 )
 from .hoist import Drum, Hoist
 from .limit import Limit
+from .rating import Rating
 from .slew import Ramp, Slew, SpeedFeedback
 from .store import Store
 from .trolley import Speedometer, Trolley
@@ -115,6 +118,7 @@ class Console:
         self.speedometer = Speedometer()
         self.gust = Gust()
         self.load = crane_module.Load(2.4)
+        self.rating = Rating("crane-1")
         self._routes: dict[tuple[str, str], Handler] = {
             ("GET", "/api/state"): self.handle_state,
             ("GET", "/api/zone/state"): self.handle_zone_state,
@@ -142,6 +146,8 @@ class Console:
             ("POST", "/api/hoist/stop"): self.handle_hoist_stop,
             ("GET", "/api/limit/state"): self.handle_limit_state,
             ("POST", "/api/limit/check"): self.handle_limit_check,
+            ("GET", "/api/rating/state"): self.handle_rating_state,
+            ("POST", "/api/rating/check"): self.handle_rating_check,
             ("GET", "/api/config"): self.handle_config,
             ("POST", "/api/config"): self.handle_config_save,
             ("GET", "/api/audit"): self.handle_audit,
@@ -314,6 +320,12 @@ class Console:
         else:
             crane_module.apply_cab(crane, command)
         self._book_keeping(command)
+        verdict: rating_module.Verdict | None = None
+        if crane.last_command().action == crane_module.ACTION_RAISE:
+            try:
+                verdict = rating_module.guard_raise(self.rating, self.audit)
+            except OverRated as exc:
+                return 409, fail(str(exc))
         try:
             crane_module.execute(crane, self.slew, self.trolley, self.hoist, self.audit)
         except SlewIdle:
@@ -327,7 +339,10 @@ class Console:
                 hoist_module.persist_hoist(self.hoist, self.store)
             except StoreError as exc:
                 LOGGER.debug("best-effort hoist persist skipped after lower: %s", exc)
-        return 200, ok(crane.last_command().to_dict())
+        payload = crane.last_command().to_dict()
+        if verdict is not None and verdict.status == rating_module.STATUS_CAUTION:
+            payload["rating"] = verdict.to_dict()
+        return 200, ok(payload)
 
     def _book_keeping(self, command: crane_module.Command) -> None:
         if command.action == crane_module.ACTION_SWING:
@@ -447,6 +462,21 @@ class Console:
                 "arbitration": arbitration.to_dict() if arbitration else None,
             }
         )
+
+    # ----------------------------------------------------------------- rating
+
+    def handle_rating_state(self, request: Request) -> tuple[int, dict[str, Any]]:
+        return 200, ok(views.rating_view(self))
+
+    def handle_rating_check(self, request: Request) -> tuple[int, dict[str, Any]]:
+        if not request.body_valid:
+            return 400, fail("bad request")
+        radius = _number(request.body.get("radius"))
+        load = _number(request.body.get("load"))
+        if radius <= 0 or load < 0:
+            return 400, fail("radius must be positive and load non-negative")
+        verdict = rating_module.check(self.rating, radius, load, self.audit)
+        return 200, ok({"verdict": verdict.to_dict(), "rating": views.rating_view(self)})
 
     # ---------------------------------------------------------------- console
 

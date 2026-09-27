@@ -87,5 +87,13 @@ class StaleRelease(LimitError):
     """Raised when a stale generation tries to release the limit latch."""
 
 
+class RatingError(CraneFleetError):
+    """Base class for rated-capacity failures."""
+
+
+class OverRated(RatingError):
+    """Raised when a hoist is attempted above the rated capacity."""
+
+
 class ConfigError(CraneFleetError):
     """Raised when a site configuration payload is invalid."""

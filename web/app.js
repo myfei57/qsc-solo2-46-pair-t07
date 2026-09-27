@@ -52,8 +52,12 @@ async function refresh() {
   const hoist = data.hoist || {};
   const wind = data.wind || {};
   const limit = data.limit || {};
+  const rating = data.rating || {};
   const cluster = data.cluster || {};
   const pair = cluster.nearest_pair || {};
+  const ratingTone = rating.status === "over" ? "danger" : rating.status === "caution" ? "warn" : "";
+  const ratingText =
+    rating.status === "over" ? "超载禁止" : rating.status === "caution" ? "接近额定" : "正常";
   renderCards([
     ["塔吊数量", Object.keys(cluster.positions || {}).length],
     ["分区占用", (zone.occupants || []).length, zone.conflict ? "danger" : ""],
@@ -63,12 +67,15 @@ async function refresh() {
     ["制动状态", hoist.brake_engaged ? "抱闸" : "松闸"],
     ["风速", (wind.level || 0).toFixed(1) + " m/s", wind.active ? "danger" : ""],
     ["限位闩锁", limit.latch ? "锁定" : "释放", limit.latch ? "danger" : ""],
+    ["额定判定", ratingText, ratingTone],
+    ["额定余量", (rating.margin || 0).toFixed(2) + " 吨", ratingTone],
     ["最近间距", pair.distance ? pair.distance.toFixed(1) + " 米" : "—", pair.below_safe ? "danger" : ""],
     ["审计记录", data.audit || 0],
   ]);
   $("crane-data").textContent = JSON.stringify(cluster, null, 2);
   $("zone-data").textContent = JSON.stringify(zone, null, 2);
   $("hoist-data").textContent = JSON.stringify(hoist, null, 2);
+  $("rating-data").textContent = JSON.stringify(rating, null, 2);
   $("alarm-data").textContent = JSON.stringify({ wind, limit }, null, 2);
   $("config-data").textContent = JSON.stringify(data.config || {}, null, 2);
   const audit = await api("/api/audit?limit=15");
@@ -139,6 +146,24 @@ $("trolley-btn").addEventListener("click", async () => {
 
 $("hoist-stop-btn").addEventListener("click", async () => {
   await post("/api/hoist/stop");
+  refresh();
+});
+
+$("rating-check-btn").addEventListener("click", async () => {
+  const radius = parseFloat($("rating-radius").value) || 0;
+  const load = parseFloat($("rating-load").value) || 0;
+  const result = await post("/api/rating/check", { radius, load });
+  if (result.ok) {
+    $("rating-data").textContent = JSON.stringify(result.data.verdict, null, 2);
+  }
+  refresh();
+});
+
+$("raise-btn").addEventListener("click", async () => {
+  const result = await post("/api/crane/command", { source: "cab", action: "raise", axis: "hoist" });
+  if (!result.ok) {
+    $("rating-data").textContent = "禁止起升：" + result.error;
+  }
   refresh();
 });
 

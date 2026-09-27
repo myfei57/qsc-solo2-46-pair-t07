@@ -56,6 +56,14 @@
         <button id="trolley-btn">变幅</button>
         <button id="hoist-stop-btn">停止起升</button>
       </div>
+      <h2>额定起重量判定</h2>
+      <pre id="rating-data"></pre>
+      <div class="actions">
+        <label>幅度（米）<input id="rating-radius" type="number" min="0" step="0.5" value="24"></label>
+        <label>吊重（吨）<input id="rating-load" type="number" min="0" step="0.1" value="3.6"></label>
+        <button id="rating-check-btn">判定</button>
+        <button id="raise-btn">起升</button>
+      </div>
     </section>
 
     <section id="page-alarms" class="hidden">

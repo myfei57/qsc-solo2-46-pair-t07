@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING
 
 from . import cluster as fleet
 from . import limit as limit_module
+from . import rating as rating_module
 from . import slew as slew_module
 from . import zone as zone_module
 from .config import config_view
@@ -121,6 +122,24 @@ def limit_view(console: "Console") -> dict[str, object]:
     }
 
 
+def rating_view(console: "Console") -> dict[str, object]:
+    rating = console.rating
+    radius = rating.radius_now()
+    load = rating.load_now()
+    capacity = rating_module.capacity_at(rating.chart, radius)
+    return {
+        "id": rating.id,
+        "radius": radius,
+        "load": load,
+        "capacity": capacity,
+        "margin": round(capacity - load, 3),
+        "status": rating.status_now(),
+        "warn_ratio": rating.warn_ratio,
+        "sequence": rating.sequence_now(),
+        "chart": [[point_radius, point_capacity] for point_radius, point_capacity in rating.chart_points()],
+    }
+
+
 def cluster_view(console: "Console") -> dict[str, object]:
     cluster = console.cluster
     current = {crane_id: point.to_dict() for crane_id, point in fleet.current_positions(cluster).items()}
@@ -199,6 +218,7 @@ def state_view(console: "Console") -> dict[str, object]:
         "hoist": hoist_view(console),
         "wind": wind_view(console),
         "limit": limit_view(console),
+        "rating": rating_view(console),
         "cluster": cluster_view(console),
         "crane": crane_view(console),
         "load": load_view(console),
@@ -218,6 +238,7 @@ __all__ = [
     "limit_view",
     "load_view",
     "nearest_pair_view",
+    "rating_view",
     "slew_view",
     "state_view",
     "trolley_view",
